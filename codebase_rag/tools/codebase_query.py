@@ -23,6 +23,7 @@ from ..constants import (
 from ..schemas import QueryGraphData
 from ..services import QueryProtocol
 from ..services.llm import CypherGenerator
+from ..query_intent import ScopedQuery
 from ..utils.token_utils import truncate_results_by_tokens
 from . import tool_descriptions as td
 
@@ -41,10 +42,12 @@ def create_query_tool(
         logger.info(ls.TOOL_QUERY_RECEIVED.format(query=natural_language_query))
         cypher_query = QUERY_NOT_AVAILABLE
         try:
-            cypher_query = await cypher_gen.generate(natural_language_query)
-
+            generated = await cypher_gen.generate(natural_language_query)
+            cypher_query = generated.display if isinstance(generated,ScopedQuery) else generated
+            fetch = (asyncio.to_thread(ingestor.fetch_all,generated.query,generated.parameters)
+                     if isinstance(generated,ScopedQuery) else asyncio.to_thread(ingestor.fetch_all,generated))
             results = await asyncio.wait_for(
-                asyncio.to_thread(ingestor.fetch_all, cypher_query),
+                fetch,
                 timeout=settings.QUERY_TIMEOUT_S,
             )
 

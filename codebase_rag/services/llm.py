@@ -18,6 +18,7 @@ from ..prompts import (
     build_rag_orchestrator_prompt,
 )
 from ..providers.base import get_provider_from_config
+from ..query_intent import INTENT_PROMPT, QueryIntent, ScopedQuery, compile_query
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -109,12 +110,17 @@ def _validate_call_procedures(query: str) -> None:
 
 
 class CypherGenerator:
-    __slots__ = ("agent",)
+    __slots__ = ("agent", "projects", "structured")
 
     def __init__(self, active_projects: list[str] | None = None) -> None:
         try:
             config = settings.active_cypher_config
             llm = _create_provider_model(config)
+            self.structured = config.provider == cs.Provider.LITELLM_PROXY and config.model_id == "rag-query-gen"
+            self.projects = list(active_projects or [])
+            if self.structured:
+                llm.client.max_retries = 0
+                llm.profile["openai_chat_supports_max_completion_tokens"] = False
 
             system_prompt = (
                 build_local_cypher_system_prompt(active_projects)
@@ -124,17 +130,23 @@ class CypherGenerator:
 
             self.agent = Agent(
                 model=llm,
-                system_prompt=system_prompt,
+                system_prompt=INTENT_PROMPT if self.structured else system_prompt,
                 output_type=str,
-                retries=settings.AGENT_RETRIES,
+                retries=0 if self.structured else settings.AGENT_RETRIES,
+                model_settings={"max_tokens":512,"timeout":120} if self.structured else None,
             )
         except Exception as e:
             raise ex.LLMGenerationError(ex.LLM_INIT_CYPHER.format(error=e)) from e
 
-    async def generate(self, natural_language_query: str) -> str:
+    async def generate(self, natural_language_query: str) -> str | ScopedQuery:
         logger.info(ls.CYPHER_GENERATING.format(query=natural_language_query))
         try:
+            if self.structured and len(self.projects) != 1:
+                raise ValueError("Select exactly one project before querying")
             result = await self.agent.run(natural_language_query)
+            if self.structured:
+                intent = QueryIntent.model_validate_json(result.output)
+                return compile_query(intent,self.projects[0])
             if (
                 not isinstance(result.output, str)
                 or cs.CYPHER_MATCH_KEYWORD not in result.output.upper()
