@@ -65,6 +65,16 @@ def mcp_registry(temp_project_root: Path) -> MCPToolsRegistry:
 class TestQueryCodeGraph:
     """Test query_code_graph functionality."""
 
+    async def test_generation_failure_is_explicit(self, mcp_registry: MCPToolsRegistry) -> None:
+        from codebase_rag.schemas import QueryGraphData
+
+        mcp_registry._query_tool.function.return_value = QueryGraphData(
+            query_used="N/A", results=[], summary="Translation failed", error="Invalid intent"
+        )
+        result = await mcp_registry.query_code_graph("Find run")
+        assert result["error"] == "Invalid intent"
+        assert result["results"] == []
+
     async def test_query_finds_functions(self, mcp_registry: MCPToolsRegistry) -> None:
         """Test querying for functions in the code graph."""
         mcp_registry._query_tool.function.return_value = MagicMock(  # ty: ignore[invalid-assignment]
@@ -202,6 +212,41 @@ class TestQueryCodeGraph:
         await mcp_registry.query_code_graph(query)
 
         mock_func.assert_called_once_with(query)
+
+
+async def test_explicit_project_name_is_shared_by_read_and_index_tools(tmp_path: Path):
+    ingestor = MagicMock()
+    ingestor.fetch_all.return_value = []
+    registry = MCPToolsRegistry(
+        project_root=str(tmp_path),
+        ingestor=ingestor,
+        cypher_gen=MagicMock(),
+        project_name="existing-project",
+    )
+    await registry.flow_verdict("existing-project.a", "existing-project.b")
+    await registry.explain_traceback("ValueError: example")
+    await registry.rank_root_causes("ValueError: example")
+    assert ingestor.fetch_all.call_count > 0
+    for call in ingestor.fetch_all.call_args_list:
+        params = call.args[1]
+        assert params and set(params.values()) <= {
+            "existing-project",
+            "existing-project.",
+        }
+
+    with (
+        patch("codebase_rag.mcp.tools.GraphUpdater") as updater,
+        patch("codebase_rag.mcp.tools.delete_project_embeddings") as delete_vectors,
+    ):
+        await registry.index_repository()
+        await registry.update_repository()
+    assert updater.call_count == 2
+    assert all(
+        call.kwargs["project_name"] == "existing-project"
+        for call in updater.call_args_list
+    )
+    ingestor.delete_project.assert_called_once_with("existing-project")
+    delete_vectors.assert_called_once_with("existing-project", [])
 
 
 class TestIndexRepository:

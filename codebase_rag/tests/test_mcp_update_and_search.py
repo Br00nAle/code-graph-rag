@@ -150,7 +150,7 @@ class TestSemanticSearchRegistration:
             result = await registry.semantic_search("find auth functions", top_k=3)
 
             mock_tool.function.assert_called_once_with(
-                query="find auth functions", top_k=3
+                query="find auth functions", top_k=3, project=registry.project_name
             )
             assert "result1" in result
 

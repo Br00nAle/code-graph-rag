@@ -78,8 +78,10 @@ class MCPToolsRegistry:
         project_root: str,
         ingestor: MemgraphIngestor,
         cypher_gen: CypherGenerator,
+        project_name: str | None = None,
     ) -> None:
         self.project_root = project_root
+        self.project_name = project_name or derive_project_name(Path(project_root))
         self.ingestor = ingestor
         self.cypher_gen = cypher_gen
         self._ingestor_lock = asyncio.Lock()
@@ -496,7 +498,7 @@ class MCPToolsRegistry:
     ) -> dict:
         from codebase_rag.flow_verdict import flow_reachability_verdict
 
-        project = derive_project_name(Path(self.project_root))
+        project = self.project_name
         # The edge scan and coverage read must see one consistent graph:
         # index/update handlers hold this lock while they delete and
         # rebuild, and an interleaved read would mix generations.
@@ -517,7 +519,7 @@ class MCPToolsRegistry:
     async def explain_traceback(self, traceback_text: str) -> dict:
         from codebase_rag.crash_correlation import explain_traceback
 
-        project = derive_project_name(Path(self.project_root))
+        project = self.project_name
         async with self._ingestor_lock:
             report = await asyncio.to_thread(
                 explain_traceback,
@@ -536,7 +538,7 @@ class MCPToolsRegistry:
     async def rank_root_causes(self, traceback_text: str) -> dict:
         from codebase_rag.crash_correlation import rank_root_causes
 
-        project = derive_project_name(Path(self.project_root))
+        project = self.project_name
         async with self._ingestor_lock:
             report = await asyncio.to_thread(
                 rank_root_causes,
@@ -620,9 +622,7 @@ class MCPToolsRegistry:
             return cs.MCP_WIPE_ERROR.format(error=e)
 
     def _index_repository_sync(self) -> str:
-        # Same collision-resistant derivation as the CLI: a bare directory
-        # name would let two repos named alike delete each other's graphs.
-        project_name = derive_project_name(Path(self.project_root))
+        project_name = self.project_name
         logger.info(lg.MCP_CLEARING_PROJECT.format(project_name=project_name))
         self._cleanup_project_embeddings(project_name)
         self.ingestor.delete_project(project_name)
@@ -654,7 +654,7 @@ class MCPToolsRegistry:
             return cs.MCP_INDEX_ERROR.format(error=e)
 
     def _update_repository_sync(self) -> str:
-        project_name = derive_project_name(Path(self.project_root))
+        project_name = self.project_name
 
         self.ingestor.ensure_constraints()
         self.ingestor.flush_all()
@@ -683,7 +683,7 @@ class MCPToolsRegistry:
         assert self._semantic_search_tool is not None
         logger.info(lg.MCP_SEMANTIC_SEARCH.format(query=natural_language_query))
         result = await self._semantic_search_tool.function(
-            query=natural_language_query, top_k=top_k
+            query=natural_language_query, top_k=top_k, project=self.project_name
         )
         return str(result)
 
@@ -719,6 +719,10 @@ class MCPToolsRegistry:
         try:
             graph_data = await self._query_tool.function(natural_language_query)
             result_dict: QueryResultDict = graph_data.model_dump()
+            if result_dict.get("error"):
+                logger.error(lg.MCP_ERROR_QUERY.format(error=result_dict["error"]))
+                return result_dict
+            result_dict.pop("error", None)
             logger.info(
                 lg.MCP_QUERY_RESULTS.format(
                     count=len(result_dict.get(cs.DICT_KEY_RESULTS, []))
@@ -840,9 +844,11 @@ def create_mcp_tools_registry(
     project_root: str,
     ingestor: MemgraphIngestor,
     cypher_gen: CypherGenerator,
+    project_name: str | None = None,
 ) -> MCPToolsRegistry:
     return MCPToolsRegistry(
         project_root=project_root,
         ingestor=ingestor,
         cypher_gen=cypher_gen,
+        project_name=project_name,
     )

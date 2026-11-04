@@ -74,6 +74,8 @@ package = true
 [tool.uv.sources]
 tree-sitter-c = { git = "https://github.com/vitali87/tree-sitter-c", rev = "fa327ad98f847f8173fc46926be4165c7971f960" }
 tree-sitter-cpp = { git = "https://github.com/vitali87/tree-sitter-cpp", rev = "b4a7be2f62f36dd460a14b2d1728d42d81d2c486" }
+# Pin the grammar source so fresh checkouts do not require a local clone.
+tree-sitter-gdscript = { git = "https://github.com/PrestonKnopp/tree-sitter-gdscript", rev = "c5c8fa4861b5a4f04a7e60d97587fc3b6cc5639e" }
 
 [tool.setuptools.packages.find]
 include = ["codebase_rag*", "codec*", "cgr*"]
@@ -124,6 +126,7 @@ treesitter-full = [
     "tree-sitter-php>=0.24.1",
     "tree-sitter-c-sharp>=0.23.5",
     "tree-sitter-dart>=0.1.0",
+    "tree-sitter-gdscript",
 ]
 
 semantic = [

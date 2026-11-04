@@ -25,11 +25,13 @@ Operations:
 kind is callable (Function OR Method), function (Function only), method, or class.
 Copy the symbol from the question; use a qualified or dotted name if provided.
 For counts symbol is empty. For unsupported symbol is empty.
+Unsupported is an operation, never a kind. For unsupported use kind callable.
 Examples:
 "Who calls GameManager.start_shift?" -> {"operation":"find_callers","symbol":"GameManager.start_shift","kind":"callable"}
 "What does GameManager.start_shift call?" -> {"operation":"find_callees","symbol":"GameManager.start_shift","kind":"callable"}
 "How many Function nodes?" -> {"operation":"count_symbols","symbol":"","kind":"function"}
 "Methods in Inference" -> {"operation":"class_methods","symbol":"Inference","kind":"class"}
+"Find a file by path" -> {"operation":"unsupported","symbol":"","kind":"callable"}
 Project scope is supplied by the caller and enforced by code. Do not translate project scope into the symbol.
 '''
 

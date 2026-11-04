@@ -187,6 +187,12 @@ def _language_imports() -> list[LanguageImport]:
             cs.QUERY_LANGUAGE,
             cs.SupportedLanguage.DART,
         ),
+        LanguageImport(
+            cs.SupportedLanguage.GDSCRIPT,
+            cs.TreeSitterModule.GDSCRIPT,
+            cs.QUERY_LANGUAGE,
+            cs.SupportedLanguage.GDSCRIPT,
+        ),
     ]
 
     return language_imports

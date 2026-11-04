@@ -1,0 +1,17 @@
+[Unit]
+Description=CGR local CPU chat test backend
+After=network.target
+
+[Service]
+WorkingDirectory=/home/user/code-graph-rag
+Environment=CUDA_VISIBLE_DEVICES=-1
+ExecStart=/home/user/llama.cpp/build/bin/llama-server --model /home/user/code-graph-rag/.tmp/local-cgr/qwen3-4b.gguf --alias cgr-chat --host 127.0.0.1 --port 18185 --api-key-file /home/user/code-graph-rag/.tmp/local-cgr/key --device none --gpu-layers 0 --no-op-offload --threads 4 --threads-batch 4 --ctx-size 16384 --parallel 1 --reasoning on --reasoning-budget 768 --temp 0 --jinja
+Nice=10
+CPUWeight=10
+CPUQuota=400%
+MemoryMax=8G
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

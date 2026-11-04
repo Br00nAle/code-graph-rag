@@ -1,0 +1,20 @@
+[Unit]
+Description=Code-Graph-RAG MCP HTTP server
+After=network-online.target cgr-daemon.service
+Wants=network-online.target cgr-daemon.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/user/code-graph-rag
+Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TARGET_REPO_PATH=/home/user/watermelon-mania
+Environment=MCP_PROJECT_NAME=watermelon-mania
+ExecStartPre=/home/user/.local/libexec/cgr-wait-memgraph.py
+ExecStart=/home/user/code-graph-rag/.venv/bin/cgr mcp-server --transport http --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/user/logs/cgr-mcp.log
+StandardError=append:/home/user/logs/cgr-mcp.log
+
+[Install]
+WantedBy=default.target

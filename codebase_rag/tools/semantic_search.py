@@ -10,6 +10,7 @@ from pydantic_ai import Tool
 from .. import constants as cs
 from .. import exceptions as ex
 from .. import logs as ls
+from ..config import settings
 from ..cypher_queries import (
     CYPHER_GET_FUNCTION_SOURCE_LOCATION,
     CYPHER_LIST_PROJECTS,
@@ -41,7 +42,12 @@ def semantic_code_search(
         from ..embedder import embed_code
         from ..vector_store import search_embeddings
 
-        query_embedding = embed_code(query)
+        prefix = (
+            settings.OPENAI_EMBEDDING_QUERY_PREFIX
+            if settings.EMBEDDING_PROVIDER == cs.EmbeddingProvider.OPENAI
+            else ""
+        )
+        query_embedding = embed_code(prefix + query)
 
         search_results = search_embeddings(
             query_embedding, top_k=top_k, project=project

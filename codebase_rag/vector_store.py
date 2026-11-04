@@ -95,6 +95,45 @@ class VectorStore(Protocol):
     ) -> list[tuple[int, float]]: ...
 
 
+def prune_stale_qdrant_embeddings(
+    project: str, current_nodes: dict[int, str]
+) -> int:
+    """Drop this project's obsolete node IDs after incremental graph updates."""
+    if _selected_backend() != VectorStoreBackend.QDRANT:
+        return 0
+    client = get_qdrant_client()
+    offset = None
+    removed = 0
+    # ponytail: scan payloads per index update; add a project payload index if costly.
+    while True:
+        points, offset = client.scroll(
+            collection_name=settings.QDRANT_COLLECTION_NAME,
+            offset=offset,
+            limit=_RETRIEVE_BATCH_SIZE,
+            with_payload=True,
+            with_vectors=False,
+        )
+        stale = []
+        for point in points:
+            payload = point.payload or {}
+            name = payload.get(PAYLOAD_QUALIFIED_NAME)
+            if isinstance(name, str) and name.startswith(project + "."):
+                node_id = payload.get(PAYLOAD_NODE_ID)
+                if point.id != node_id or current_nodes.get(node_id) != name:
+                    stale.append(point.id)
+        if stale:
+            client.delete(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                points_selector=stale,
+                wait=True,
+            )
+            removed += len(stale)
+        if offset is None:
+            break
+    logger.info("Pruned {} stale Qdrant embeddings for {}", removed, project)
+    return removed
+
+
 def close_vector_store_client() -> None:
     global _CLIENT, _CLIENT_BACKEND
     if _CLIENT is not None:

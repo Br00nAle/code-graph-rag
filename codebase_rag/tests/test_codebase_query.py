@@ -143,6 +143,8 @@ class TestQueryCodebaseKnowledgeGraph:
         )
         tool = create_query_tool(mock_ingestor, mock_cypher_gen, console=mock_console)
         result = await tool.function(natural_language_query="Invalid query")
+        assert result.error == "Generation failed"
+        mock_ingestor.fetch_all.assert_not_called()
         assert result.results == []
         assert (
             "translation failed" in result.summary.lower()

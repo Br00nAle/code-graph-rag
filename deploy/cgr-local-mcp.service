@@ -1,0 +1,18 @@
+[Unit]
+Description=CGR Arch-local MCP test endpoint (AI Cluster)
+After=cgr-daemon.service cgr-local-chat.service cgr-local-embed.service
+Requires=cgr-local-chat.service cgr-local-embed.service
+Wants=cgr-daemon.service
+
+[Service]
+WorkingDirectory=/home/user/code-graph-rag
+Environment=TARGET_REPO_PATH=/home/user/projects/ai-cluster/ai-cluster-blueprint
+Environment=MCP_PROJECT_NAME=ai-cluster-blueprint
+ExecStart=/home/user/code-graph-rag/.venv/bin/python /home/user/code-graph-rag/deploy/local_cgr.py mcp-server --transport http --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+Nice=10
+MemoryMax=2G
+
+[Install]
+WantedBy=default.target

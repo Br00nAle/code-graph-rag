@@ -2757,6 +2757,7 @@ class GraphUpdater:
             from .embedder import embed_code_batch, get_embedding_cache
             from .vector_store import (
                 close_qdrant_client,
+                prune_stale_qdrant_embeddings,
                 store_embedding_batch,
                 verify_stored_ids,
             )
@@ -2768,24 +2769,30 @@ class GraphUpdater:
             )
 
             if not results:
+                try:
+                    prune_stale_qdrant_embeddings(self.project_name, {})
+                finally:
+                    close_qdrant_client()
                 logger.info(ls.NO_FUNCTIONS_FOR_EMBEDDING)
                 return
 
             logger.info(ls.GENERATING_EMBEDDINGS, count=len(results))
 
             embedded_count = 0
+            embedding_failed = False
             expected_ids: set[int] = set()
             pending: list[tuple[int, str, str]] = []
             flush_at = settings.QDRANT_BATCH_SIZE
 
             def flush() -> int:
-                nonlocal pending
+                nonlocal pending, embedding_failed
                 if not pending:
                     return 0
                 snippets = [item[2] for item in pending]
                 try:
                     embeddings = embed_code_batch(snippets)
                 except Exception as e:
+                    embedding_failed = True
                     logger.warning(
                         ls.EMBEDDING_BATCH_COMPUTE_FAILED,
                         count=len(pending),
@@ -2800,6 +2807,8 @@ class GraphUpdater:
                 for node_id, _qname, _src in pending:
                     expected_ids.add(node_id)
                 stored = store_embedding_batch(points)
+                if stored != len(pending):
+                    embedding_failed = True
                 pending = []
                 return stored
 
@@ -2837,6 +2846,12 @@ class GraphUpdater:
                     logger.debug(ls.NO_SOURCE_FOR, name=qualified_name)
 
             embedded_count += flush()
+
+            if not embedding_failed:
+                prune_stale_qdrant_embeddings(
+                    self.project_name,
+                    {row[cs.KEY_NODE_ID]: row[cs.KEY_QUALIFIED_NAME] for row in results},
+                )
 
             logger.info(ls.EMBEDDINGS_COMPLETE, count=embedded_count)
 

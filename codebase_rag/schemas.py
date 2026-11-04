@@ -9,6 +9,7 @@ class QueryGraphData(BaseModel):
     query_used: str
     results: list[ResultRow]
     summary: str
+    error: str | None = None
 
     @field_validator("results", mode="before")
     @classmethod

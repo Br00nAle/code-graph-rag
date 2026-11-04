@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import shutil
 from abc import ABC, abstractmethod
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from loguru import logger
+from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
@@ -30,9 +32,7 @@ class ModelProvider(ABC):
         self.config = config
 
     @abstractmethod
-    def create_model(
-        self, model_id: str, **kwargs: str | int | None
-    ) -> GoogleModel | OpenAIResponsesModel | OpenAIChatModel | AnthropicModel:
+    def create_model(self, model_id: str, **kwargs: str | int | None) -> Model:
         pass
 
     @abstractmethod
@@ -292,7 +292,24 @@ class MiniMaxProvider(ModelProvider):
         return OpenAIChatModel(model_id, provider=provider)
 
 
+class CodexProvider(ModelProvider):
+    @property
+    def provider_name(self) -> cs.Provider:
+        return cs.Provider.CODEX
+
+    def validate_config(self) -> None:
+        if shutil.which("codex") is None:
+            raise ValueError("Codex CLI is required; install it and run codex login")
+
+    def create_model(self, model_id: str, **kwargs: str | int | None) -> Model:
+        from .codex import create_codex_model
+
+        self.validate_config()
+        return create_codex_model(model_id)
+
+
 PROVIDER_REGISTRY: dict[str, type[ModelProvider]] = {
+    cs.Provider.CODEX: CodexProvider,
     cs.Provider.GOOGLE: GoogleProvider,
     cs.Provider.OPENAI: OpenAIProvider,
     cs.Provider.OLLAMA: OllamaProvider,

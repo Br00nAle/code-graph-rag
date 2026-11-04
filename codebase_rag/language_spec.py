@@ -311,6 +311,19 @@ DART_FQN_SPEC = FQNSpec(
     file_to_module_parts=_generic_file_to_module,
 )
 
+def _gdscript_get_name(node: Node) -> str | None:
+    from .parsers.gdscript import utils as gdscript_utils
+
+    return gdscript_utils.gdscript_get_name(node)
+
+
+GDSCRIPT_FQN_SPEC = FQNSpec(
+    scope_node_types=frozenset(cs.FQN_GDSCRIPT_SCOPE_TYPES),
+    function_node_types=frozenset(cs.FQN_GDSCRIPT_FUNCTION_TYPES),
+    get_name=_gdscript_get_name,
+    file_to_module_parts=_generic_file_to_module,
+)
+
 LANGUAGE_FQN_SPECS: dict[cs.SupportedLanguage, FQNSpec] = {
     cs.SupportedLanguage.PYTHON: PYTHON_FQN_SPEC,
     cs.SupportedLanguage.JS: JS_FQN_SPEC,
@@ -326,6 +339,7 @@ LANGUAGE_FQN_SPECS: dict[cs.SupportedLanguage, FQNSpec] = {
     cs.SupportedLanguage.PHP: PHP_FQN_SPEC,
     cs.SupportedLanguage.CSHARP: CSHARP_FQN_SPEC,
     cs.SupportedLanguage.DART: DART_FQN_SPEC,
+    cs.SupportedLanguage.GDSCRIPT: GDSCRIPT_FQN_SPEC,
 }
 
 
@@ -655,6 +669,33 @@ LANGUAGE_SPECS: dict[cs.SupportedLanguage, LanguageSpec] = {
         call_query=cs.DART_CALL_QUERY,
         import_node_types=cs.SPEC_DART_IMPORT_TYPES,
         import_from_node_types=cs.SPEC_DART_IMPORT_TYPES,
+    ),
+    cs.SupportedLanguage.GDSCRIPT: LanguageSpec(
+        language=cs.SupportedLanguage.GDSCRIPT,
+        file_extensions=cs.GDSCRIPT_EXTENSIONS,
+        function_node_types=cs.SPEC_GDSCRIPT_FUNCTION_TYPES,
+        class_node_types=cs.SPEC_GDSCRIPT_CLASS_TYPES,
+        module_node_types=cs.SPEC_GDSCRIPT_MODULE_TYPES,
+        call_node_types=cs.SPEC_GDSCRIPT_CALL_TYPES,
+        function_query="""
+        (function_definition
+            name: (name) @name) @function
+        (constructor_definition) @function
+        (lambda) @function
+        """,
+        class_query="""
+        (class_definition
+            name: (name) @name) @class
+        (class_name_statement
+            name: (name) @name) @class
+        (enum_definition
+            name: (name) @name) @class
+        """,
+        call_query="""
+        (call) @call
+        (attribute_call) @call
+        (base_call) @call
+        """,
     ),
 }
 

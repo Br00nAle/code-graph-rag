@@ -9,6 +9,7 @@ from codebase_rag import exceptions as ex
 from codebase_rag.services.llm import (
     CypherGenerator,
     _clean_cypher_response,
+    _repair_lowered_list_iterators,
     create_rag_orchestrator,
 )
 
@@ -57,6 +58,23 @@ RETURN n.name"""
         result = _clean_cypher_response(query)
         assert result.endswith(";")
         assert "MATCH" in result
+
+
+def test_repairs_to_lower_called_on_list_iterator() -> None:
+    query = """MATCH (n:Function|Method)
+WHERE ANY(d IN toLower(n.decorators) WHERE d IN ['flow', 'task'])
+RETURN n.name AS name"""
+
+    repaired = _repair_lowered_list_iterators(query)
+
+    assert "ANY(d IN n.decorators" in repaired
+    assert "IN toLower(n.decorators)" not in repaired
+
+
+def test_does_not_rewrite_string_searches() -> None:
+    query = "MATCH (n) WHERE toLower(n.docstring) CONTAINS 'flow' RETURN n.name"
+
+    assert _repair_lowered_list_iterators(query) == query
 
 
 class TestCypherGenerator:
@@ -148,6 +166,41 @@ class TestCypherGeneratorGenerate:
         result = await generator.generate("Find all nodes")
 
         assert result == "MATCH (n) RETURN n;"
+
+    @pytest.mark.asyncio
+    @patch("codebase_rag.services.llm.settings")
+    @patch("codebase_rag.services.llm.get_provider_from_config")
+    @patch("codebase_rag.services.llm.Agent")
+    async def test_generate_repairs_invalid_list_lowering(
+        self,
+        mock_agent_cls: MagicMock,
+        mock_get_provider: MagicMock,
+        mock_settings: MagicMock,
+    ) -> None:
+        mock_config = MagicMock()
+        mock_config.provider = cs.Provider.GOOGLE
+        mock_settings.active_cypher_config = mock_config
+        mock_settings.AGENT_RETRIES = 3
+
+        mock_provider = MagicMock()
+        mock_provider.create_model.return_value = MagicMock()
+        mock_get_provider.return_value = mock_provider
+
+        mock_result = MagicMock()
+        mock_result.output = (
+            "MATCH (n:Function|Method) "
+            "WHERE ANY(d IN toLower(n.decorators) WHERE d IN ['flow']) "
+            "RETURN n.name AS name"
+        )
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_agent_cls.return_value = mock_agent
+
+        generator = CypherGenerator()
+        result = await generator.generate("Find decorated functions")
+
+        assert "ANY(d IN n.decorators" in result
+        assert "toLower(n.decorators)" not in result
 
     @pytest.mark.asyncio
     @patch("codebase_rag.services.llm.settings")

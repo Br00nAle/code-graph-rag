@@ -48,6 +48,7 @@ Additional settings:
 |----------|---------|---------|
 | `OPENAI_EMBEDDING_DIMENSIONS` | unset | Forwarded as the `dimensions` request parameter for models that support truncated output |
 | `OPENAI_EMBEDDING_BATCH_SIZE` | `128` | Snippets per HTTP request |
+| `OPENAI_EMBEDDING_MAX_INPUT_CHARS` | `24000` | Maximum characters sent for one remote embedding input; oversized snippets keep their prefix and suffix |
 | `OPENAI_EMBEDDING_TIMEOUT` | `60` | Request timeout in seconds |
 
 The vector store dimension must match the embedding model's output. UniXcoder

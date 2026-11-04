@@ -10,6 +10,8 @@ wheels/
 .venv
 .env
 .tmp
+# Optional local clone; dependency resolution uses the pinned Git source.
+/grammars/tree-sitter-gdscript/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/

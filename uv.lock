@@ -404,7 +404,7 @@ wheels = [
 
 [[package]]
 name = "code-graph-rag"
-version = "0.0.684"
+version = "0.0.717"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -466,6 +466,7 @@ treesitter-full = [
     { name = "tree-sitter-c-sharp" },
     { name = "tree-sitter-cpp" },
     { name = "tree-sitter-dart" },
+    { name = "tree-sitter-gdscript" },
     { name = "tree-sitter-go" },
     { name = "tree-sitter-java" },
     { name = "tree-sitter-javascript" },
@@ -545,6 +546,7 @@ requires-dist = [
     { name = "tree-sitter-c-sharp", marker = "extra == 'treesitter-full'", specifier = ">=0.23.5" },
     { name = "tree-sitter-cpp", marker = "extra == 'treesitter-full'", git = "https://github.com/vitali87/tree-sitter-cpp?rev=b4a7be2f62f36dd460a14b2d1728d42d81d2c486" },
     { name = "tree-sitter-dart", marker = "extra == 'treesitter-full'", specifier = ">=0.1.0" },
+    { name = "tree-sitter-gdscript", marker = "extra == 'treesitter-full'", git = "https://github.com/PrestonKnopp/tree-sitter-gdscript?rev=c5c8fa4861b5a4f04a7e60d97587fc3b6cc5639e" },
     { name = "tree-sitter-go", marker = "extra == 'treesitter-full'", specifier = ">=0.23.4" },
     { name = "tree-sitter-java", marker = "extra == 'treesitter-full'", specifier = ">=0.23.5" },
     { name = "tree-sitter-javascript", marker = "extra == 'treesitter-full'", specifier = ">=0.23.1" },
@@ -3847,6 +3849,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/43/e3/ebee709bdd1e472bfbd1f824e5377993cfcfb7437c9e9fedeac243480ac1/tree_sitter_dart-0.1.0-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:05906d65a1c8688a0a0358c2e1b65ade0eec2ec7be7364c75de2f5c1e2844e0c", size = 162621, upload-time = "2026-06-21T16:01:56.698Z" },
     { url = "https://files.pythonhosted.org/packages/f7/a7/e8af7fb56dfd0d39df6f96e180d47d822407a7c98edc485b0c18ddd7ee28/tree_sitter_dart-0.1.0-cp38-abi3-win_amd64.whl", hash = "sha256:ee1d5f2109d2a206583227cfc4e2b0890f48700a0796207c2eecb5c3d7f23f63", size = 128126, upload-time = "2026-06-21T16:01:57.878Z" },
 ]
+
+[[package]]
+name = "tree-sitter-gdscript"
+version = "6.1.0"
+source = { git = "https://github.com/PrestonKnopp/tree-sitter-gdscript?rev=c5c8fa4861b5a4f04a7e60d97587fc3b6cc5639e#c5c8fa4861b5a4f04a7e60d97587fc3b6cc5639e" }
 
 [[package]]
 name = "tree-sitter-go"

@@ -30,6 +30,7 @@ from .cpp import utils as cpp_utils
 from .cpp.type_inference import CppTypeInferenceEngine
 from .csharp import type_inference as csharp_ti
 from .dart import utils as dart_utils
+from .gdscript import utils as gdscript_utils
 from .dispatch_registry import DispatchRegistryProcessor
 from .flow_access import FlowProcessor
 from .go import type_inference as go_ti
@@ -2372,6 +2373,8 @@ class CallProcessor:
         # chain, not inside the node.
         if language == cs.SupportedLanguage.DART:
             return dart_utils.dart_call_name(call_node)
+        if language == cs.SupportedLanguage.GDSCRIPT:
+            return gdscript_utils.gdscript_call_name(call_node)
         if func_child := call_node.child_by_field_name(cs.TS_FIELD_FUNCTION):
             match func_child.type:
                 case (

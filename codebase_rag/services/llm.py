@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from pydantic import ValidationError
 from pydantic_ai import Agent, DeferredToolRequests, Tool
 from pydantic_ai.agent import AgentRetries
 
@@ -76,6 +77,29 @@ _CYPHER_DANGEROUS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 _VARLEN_PATTERN = re.compile(r"\[[^\]]*?\*([^\]]*)\]")
 _PROCEDURE_CALL_PATTERN = re.compile(r"\bCALL\s+([\w\.]+)", re.IGNORECASE)
+# Some models incorrectly pass a list property through toLower(), e.g.
+# ``ANY(d IN toLower(n.decorators) WHERE ...)``.  Memgraph accepts toLower()
+# for strings only; repair this common shape before it reaches the database.
+_LOWERED_LIST_ITERATOR_PATTERN = re.compile(
+    r"\bANY\(\s*(?P<item>[A-Za-z_]\w*)\s+IN\s+"
+    r"toLower\(\s*(?P<list>[A-Za-z_]\w*\.[A-Za-z_]\w*)\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _repair_lowered_list_iterators(query: str) -> str:
+    """Repair model output that applies ``toLower`` to a list property.
+
+    List properties must be iterated first, with case folding applied to the
+    individual value.  The generated predicate remains responsible for
+    comparing the item to the requested value; this repair only makes the
+    iterator expression valid Cypher.
+    """
+
+    return _LOWERED_LIST_ITERATOR_PATTERN.sub(
+        lambda match: f"ANY({match.group('item')} IN {match.group('list')}",
+        query,
+    )
 
 
 def _validate_cypher_read_only(query: str) -> None:
@@ -145,8 +169,37 @@ class CypherGenerator:
                 raise ValueError("Select exactly one project before querying")
             result = await self.agent.run(natural_language_query)
             if self.structured:
-                intent = QueryIntent.model_validate_json(result.output)
-                return compile_query(intent,self.projects[0])
+                for attempt in range(3):
+                    output = result.output.strip()
+                    if output.startswith("```") and output.endswith("```"):
+                        output = output.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    try:
+                        intent = QueryIntent.model_validate_json(output)
+                        # Compilation also validates operation-specific requirements.
+                        if intent.operation == "unsupported":
+                            break
+                        return compile_query(intent, self.projects[0])
+                    except (ValidationError, ValueError) as error:
+                        if attempt == 2:
+                            raise ValueError(
+                                f"Intent generation failed after 3 attempts: {error}"
+                            ) from error
+                        logger.warning(
+                            "Intent validation failed; correction retry {}/2: {}",
+                            attempt + 1,
+                            error,
+                        )
+                        result = await self.agent.run(
+                            f"Original question: {natural_language_query}\n"
+                            f"Previous response: {result.output}\n"
+                            f"Validation error: {error}\n"
+                            "Correct the response using the intent schema. Return only JSON. "
+                            "kind must be callable, function, method, or class. "
+                            "For unsupported requests use operation=unsupported, "
+                            "symbol empty, and kind=callable. Preserve the original request; "
+                            "do not substitute a different supported operation."
+                        )
+                return compile_query(intent, self.projects[0])
             if (
                 not isinstance(result.output, str)
                 or cs.CYPHER_MATCH_KEYWORD not in result.output.upper()
@@ -156,6 +209,7 @@ class CypherGenerator:
                 )
 
             query = _clean_cypher_response(result.output)
+            query = _repair_lowered_list_iterators(query)
             _validate_cypher_read_only(query)
             _validate_no_unbounded_paths(query)
             _validate_call_procedures(query)

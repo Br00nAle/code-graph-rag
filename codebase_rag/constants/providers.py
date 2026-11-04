@@ -9,6 +9,7 @@ class ModelRole(StrEnum):
 
 
 class Provider(StrEnum):
+    CODEX = "codex"
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"

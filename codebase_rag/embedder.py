@@ -119,6 +119,25 @@ def _openai_client() -> httpx.Client:
     )
 
 
+def _bounded_remote_input(snippet: str) -> str:
+    limit = settings.OPENAI_EMBEDDING_MAX_INPUT_CHARS
+    if len(snippet) <= limit:
+        return snippet
+
+    # Retain both declarations/imports at the front and the function's
+    # terminal behavior at the end. The original snippet remains the cache
+    # key, so truncation cannot alias two distinct source snippets.
+    marker = "\n\n[... source elided for embedding ...]\n\n"
+    available = max(0, limit - len(marker))
+    if not available:
+        return marker[:limit]
+
+    prefix_len = (available + 1) // 2
+    suffix_len = available // 2
+    suffix = snippet[-suffix_len:] if suffix_len else ""
+    return snippet[:prefix_len] + marker + suffix
+
+
 def _openai_embed_batch(snippets: list[str]) -> list[list[float]]:
     embeddings: list[list[float]] = []
     batch_size = settings.OPENAI_EMBEDDING_BATCH_SIZE
@@ -127,7 +146,7 @@ def _openai_embed_batch(snippets: list[str]) -> list[list[float]]:
             batch = snippets[start : start + batch_size]
             payload: dict[str, object] = {
                 "model": settings.OPENAI_EMBEDDING_MODEL,
-                "input": batch,
+                "input": [_bounded_remote_input(snippet) for snippet in batch],
             }
             if settings.OPENAI_EMBEDDING_DIMENSIONS is not None:
                 payload["dimensions"] = settings.OPENAI_EMBEDDING_DIMENSIONS
@@ -301,6 +320,8 @@ def embed_code_batch(
     if not snippets:
         return []
 
+    if settings.EMBEDDING_PROVIDER == cs.EmbeddingProvider.OPENAI:
+        snippets = [settings.OPENAI_EMBEDDING_DOCUMENT_PREFIX + s for s in snippets]
     cache = get_embedding_cache()
     cached_results = cache.get_many(snippets)
 

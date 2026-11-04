@@ -60,7 +60,10 @@ class TestStartupKeyValidation:
             with pytest.raises(ValueError, match=cs.ModelRole.CYPHER):
                 srv.create_server()
 
-    def test_local_providers_keep_their_keyless_exemption(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("project_name", [None, "existing-project"])
+    def test_local_providers_keep_their_keyless_exemption(
+        self, tmp_path: Path, project_name: str | None
+    ) -> None:
         with (
             patch.dict(os.environ, {"TARGET_REPO_PATH": str(tmp_path)}),
             patch.object(
@@ -74,8 +77,12 @@ class TestStartupKeyValidation:
                 property(lambda self: _local_config()),
             ),
             patch.object(srv, "MemgraphIngestor"),
-            patch.object(srv, "CypherGenerator"),
-            patch.object(srv, "create_mcp_tools_registry"),
+            patch.object(srv.settings, "MCP_PROJECT_NAME", project_name),
+            patch.object(srv, "CypherGenerator") as cypher,
+            patch.object(srv, "create_mcp_tools_registry") as registry,
         ):
             server, _ = srv.create_server()
             assert server is not None
+            expected = project_name or srv.derive_project_name(tmp_path)
+            cypher.assert_called_once_with(active_projects=[expected])
+            assert registry.call_args.kwargs["project_name"] == expected

@@ -48,6 +48,7 @@ EXT_PHP = ".php"
 EXT_LUA = ".lua"
 EXT_CS = ".cs"
 EXT_DART = ".dart"
+EXT_GD = ".gd"
 
 # File extension tuples by language
 PY_EXTENSIONS = (EXT_PY,)
@@ -88,6 +89,7 @@ PHP_EXTENSIONS = (EXT_PHP,)
 LUA_EXTENSIONS = (EXT_LUA,)
 CS_EXTENSIONS = (EXT_CS,)
 DART_EXTENSIONS = (EXT_DART,)
+GDSCRIPT_EXTENSIONS = (EXT_GD,)
 
 # Package indicator files
 PKG_INIT_PY = "__init__.py"
@@ -250,6 +252,7 @@ class SupportedLanguage(StrEnum):
     LUA = "lua"
     CSHARP = "c_sharp"
     DART = "dart"
+    GDSCRIPT = "gdscript"
 
 
 class LanguageStatus(StrEnum):
@@ -334,6 +337,11 @@ LANGUAGE_METADATA: dict[SupportedLanguage, LanguageMetadata] = {
         "Classes, mixins, extensions, enhanced enums, factory/named constructors, Flutter widgets, package/relative/dart: imports, part directives, pubspec dependencies",
         "Dart",
     ),
+    SupportedLanguage.GDSCRIPT: LanguageMetadata(
+        LanguageStatus.DEV,
+        "Godot GDScript: functions, nested classes, class_name, enums, constructors (_init), calls including attribute/super",
+        "GDScript",
+    ),
 }
 
 # Index file names
@@ -376,6 +384,7 @@ class TreeSitterModule(StrEnum):
     PHP = "tree_sitter_php"
     CSHARP = "tree_sitter_c_sharp"
     DART = "tree_sitter_dart"
+    GDSCRIPT = "tree_sitter_gdscript"
 
 
 # Directory names with a context-dependent ignore: `bin` is build output

@@ -49,11 +49,13 @@ def extract_tool_names(tools: list["Tool"]) -> ToolNames:
 
 CYPHER_QUERY_RULES = """**2. Critical Cypher Query Rules**
 
+- **Callable Labels Vary by Language**: For function/method and caller/callee searches, include both Function and Method nodes (e.g., `WHERE (n:Function OR n:Method)`). A dotted name does not imply a Method label; GDScript autoload functions are Function nodes. Calls run `caller-[:CALLS]->callee`.
+- **Caller Queries Return the Caller**: For "who calls Project.module.target", use `MATCH (caller)-[:CALLS]->(callee) WHERE caller.qualified_name STARTS WITH 'Project.' AND callee.qualified_name = 'Project.module.target' RETURN caller.qualified_name AS caller LIMIT 50`. Return the caller, not the already-known callee. If only functions are requested, add `(caller:Function OR caller:Method)` to WHERE. Aliases are simple identifiers such as `caller`, never `caller.qualified_name`.
 - **ALWAYS Return Specific Properties with Aliases**: Do NOT return whole nodes (e.g., `RETURN n`). You MUST return specific properties with clear aliases (e.g., `RETURN n.name AS name`).
 - **Use `STARTS WITH` for Paths**: When matching paths, always use `STARTS WITH` for robustness (e.g., `WHERE n.path STARTS WITH 'workflows/src'`). Do not use `=`.
 - **Use `ENDS WITH` for qualified_name**: The `qualified_name` property contains full paths like `'Project.folder.subfolder.ClassName'`. When users mention a class, function, or method by its short name (e.g., "VatManager"), use `ENDS WITH` to match: `WHERE c.qualified_name ENDS WITH '.VatManager'`. Do NOT use `{name: 'VatManager'}` equality matching.
-- **Use `toLower()` for Searches**: For case-insensitive searching on string properties, use `toLower()`.
-- **Querying Lists**: To check if a list property (like `decorators`) contains an item, use the `ANY` or `IN` clause (e.g., `WHERE 'flow' IN n.decorators`).
+- **Use `toLower()` for Searches**: For case-insensitive searching on string properties, use `toLower()`. Never pass a list property to `toLower()`.
+- **Querying Lists**: To check if a list property (like `decorators`) contains an item, use the `ANY` or `IN` clause (e.g., `WHERE ANY(d IN n.decorators WHERE toLower(d) = 'flow')` or `WHERE 'flow' IN n.decorators`). The `IN` expression after `ANY` must be the list itself, never `toLower(n.decorators)`.
 - **NEVER use unbounded variable-length paths**: Patterns like `[:CALLS*]`, `[*]`, `[:CALLS*1..]` enumerate every path in the graph and exhaust memory. Always cap with an upper bound, e.g. `[:CALLS*1..6]`. If you genuinely need unbounded reachability, use a MAGE procedure (see Section 2b) instead of variable-length Cypher.
 
 **2b. Graph Algorithm Procedures (MAGE)**
@@ -141,6 +143,7 @@ def build_rag_orchestrator_prompt(
 1.  **TOOL-ONLY ANSWERS**: You must ONLY use information from the tools provided. Do not use external knowledge.
 2.  **NATURAL LANGUAGE QUERIES**: When using the `{t.query_graph}` tool, ALWAYS use natural language questions. NEVER write Cypher queries directly - the tool will translate your natural language into the appropriate database query.
 3.  **HONESTY**: If a tool fails or returns no results, you MUST state that clearly and report any error messages. Do not invent answers.
+    For source retrieval, first resolve short symbols to exact qualified names using graph or semantic search. If an entity lookup fails, retry with the returned full qualified name or read its source file before concluding the source is unavailable.
 4.  **CHOOSE THE RIGHT TOOL FOR THE FILE TYPE**:
     - For source code files (.py, .ts, etc.), use `{t.read_file}`.
     - Images and PDFs the user references are attached inline to the message; read them directly from your own multimodal input.
@@ -310,7 +313,7 @@ cypher// "find code smells" / "show bare excepts"
 {CYPHER_EXAMPLE_CODE_SMELLS}
 
 **4. Output Format**
-Provide only the Cypher query.
+Provide only executable Cypher. Do not include comments, markdown, or explanatory text. Comments in the examples above are teaching notes, not part of your output.
 """
 
 
@@ -321,7 +324,7 @@ CYPHER_SYSTEM_PROMPT = build_cypher_system_prompt()
 # Stricter prompt for less capable open-source/local models (e.g., Ollama)
 def build_local_cypher_system_prompt(active_projects: list[str] | None = None) -> str:
     return f"""
-You are a Neo4j Cypher query generator. You ONLY respond with a valid Cypher query. Do not add explanations or markdown.
+You are a Neo4j Cypher query generator. You ONLY respond with executable Cypher. Do not add comments, explanations or markdown.
 
 {GRAPH_SCHEMA_AND_RULES}
 {_format_cypher_project_scope(active_projects)}

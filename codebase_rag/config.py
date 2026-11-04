@@ -101,7 +101,7 @@ def format_missing_api_key_errors(
     return error_msg
 
 
-LOCAL_PROVIDERS = frozenset({cs.Provider.OLLAMA})
+LOCAL_PROVIDERS = frozenset({cs.Provider.OLLAMA, cs.Provider.CODEX})
 
 
 @dataclass
@@ -196,6 +196,7 @@ class AppConfig(BaseSettings):
         return f"{self.OLLAMA_BASE_URL.rstrip('/')}/v1"
 
     TARGET_REPO_PATH: str = "."
+    MCP_PROJECT_NAME: str | None = None
     # HYBRID degrades to pure tree-sitter when libclang or compile_commands.json
     # is missing, so it is a safe default and strictly better (macros, includes,
     # expansion calls) with one.
@@ -288,9 +289,15 @@ class AppConfig(BaseSettings):
     )
     OPENAI_EMBEDDING_BASE_URL: str = cs.OPENAI_DEFAULT_ENDPOINT
     OPENAI_EMBEDDING_MODEL: str = cs.OPENAI_EMBEDDING_DEFAULT_MODEL
+    OPENAI_EMBEDDING_QUERY_PREFIX: str = ""
+    OPENAI_EMBEDDING_DOCUMENT_PREFIX: str = ""
     OPENAI_EMBEDDING_API_KEY: str | None = None
     OPENAI_EMBEDDING_DIMENSIONS: int | None = Field(default=None, gt=0)
     OPENAI_EMBEDDING_BATCH_SIZE: int = Field(default=128, gt=0)
+    # Keep remote embedding inputs below common 8k-token model limits. This is
+    # a character guard because the configured OpenAI-compatible endpoint may
+    # use a tokenizer unavailable to CGR.
+    OPENAI_EMBEDDING_MAX_INPUT_CHARS: int = Field(default=24000, gt=0)
     OPENAI_EMBEDDING_TIMEOUT: float = Field(default=60.0, gt=0)
     EMBEDDING_MAX_LENGTH: int = 512
     EMBEDDING_PROGRESS_INTERVAL: int = 10

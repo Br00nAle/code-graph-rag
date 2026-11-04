@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool
 
 from codebase_rag import constants as cs
 from codebase_rag import logs as lg
@@ -98,17 +98,16 @@ def create_server() -> tuple[Server, MemgraphIngestor]:
         password=settings.MEMGRAPH_PASSWORD,
     )
 
-    # Scope Cypher generation to this server's project (named exactly as
-    # indexing names it) so queries don't bleed into other projects sharing
-    # the database (issue #425).
-    cypher_generator = CypherGenerator(
-        active_projects=[derive_project_name(project_root)]
-    )
+    # Match CLI --project-name for existing/custom indexes; otherwise keep
+    # the collision-resistant name used by default indexing (issue #425).
+    project_name = settings.MCP_PROJECT_NAME or derive_project_name(project_root)
+    cypher_generator = CypherGenerator(active_projects=[project_name])
 
     tools = create_mcp_tools_registry(
         project_root=str(project_root),
         ingestor=ingestor,
         cypher_gen=cypher_generator,
+        project_name=project_name,
     )
 
     logger.info(lg.MCP_SERVER_INIT_SUCCESS)
@@ -136,7 +135,9 @@ def create_server() -> tuple[Server, MemgraphIngestor]:
         ]
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: MCPToolArguments) -> list[TextContent]:
+    async def call_tool(
+        name: str, arguments: MCPToolArguments
+    ) -> list[TextContent] | CallToolResult:
         logger.info(lg.MCP_SERVER_CALLING_TOOL.format(name=name))
 
         try:
@@ -152,6 +153,17 @@ def create_server() -> tuple[Server, MemgraphIngestor]:
 
             if returns_json:
                 result_text = json.dumps(result, indent=cs.MCP_JSON_INDENT)
+                if (
+                    name == cs.MCPToolName.QUERY_CODE_GRAPH
+                    and isinstance(result, dict)
+                    and result.get("error")
+                ):
+                    return CallToolResult(
+                        content=[
+                            TextContent(type=cs.MCP_CONTENT_TYPE_TEXT, text=result_text)
+                        ],
+                        isError=True,
+                    )
             else:
                 result_text = str(result)
 
@@ -291,9 +303,34 @@ async def serve_http(
     if auth_token:
         endpoint = _require_bearer_auth(endpoint, auth_token)
 
+    endpoint_path = settings.MCP_HTTP_ENDPOINT_PATH.rstrip("/") or "/"
+
+    async def dispatch_mcp(scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and (scope["path"].rstrip("/") or "/") == endpoint_path
+        ):
+            # Mount normally redirects /mcp to /mcp/. MCP clients commonly do
+            # not follow redirects for session POSTs, so normalize both forms
+            # before handing the request to the SDK.
+            normalized_scope = dict(scope)
+            normalized_scope["path"] = "/"
+            normalized_scope["raw_path"] = b"/"
+            await endpoint(normalized_scope, receive, send)
+            return
+
+        if scope["type"] == "http":
+            await send(
+                {"type": "http.response.start", "status": 404, "headers": []}
+            )
+            await send({"type": "http.response.body", "body": b"Not Found"})
+            return
+
+        await endpoint(scope, receive, send)
+
     starlette_app = Starlette(
         routes=[
-            Mount(settings.MCP_HTTP_ENDPOINT_PATH, app=endpoint),
+            Mount("/", app=dispatch_mcp),
         ],
         lifespan=lifespan,
     )

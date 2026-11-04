@@ -95,6 +95,27 @@ def test_openai_batch_respects_batch_size(
     assert [len(req["input"]) for req in handler.requests] == [2, 2, 1]
 
 
+def test_openai_remote_inputs_are_bounded_without_aliasing_cache_keys(
+    openai_provider: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codebase_rag.embedder import embed_code
+
+    monkeypatch.setattr(settings, "OPENAI_EMBEDDING_MAX_INPUT_CHARS", 80)
+    handler = RecordingHandler()
+    source = "header\n" + ("body\n" * 30) + "return result\n"
+    with patch(
+        "codebase_rag.embedder._openai_client", side_effect=lambda: _client_for(handler)
+    ):
+        embed_code(source)
+
+    sent = handler.requests[0]["input"][0]
+    assert isinstance(sent, str)
+    assert len(sent) <= 80
+    assert sent.startswith("header\n")
+    assert sent.endswith("return result\n")
+    assert "source elided for embedding" in sent
+
+
 def test_openai_single_embed_uses_endpoint(openai_provider: None) -> None:
     from codebase_rag.embedder import embed_code
 

@@ -105,6 +105,7 @@ def create_query_tool(
             )
         except ex.LLMGenerationError as e:
             return QueryGraphData(
+                error=str(e),
                 query_used=QUERY_NOT_AVAILABLE,
                 results=[],
                 summary=QUERY_SUMMARY_TRANSLATION_FAILED.format(error=e),

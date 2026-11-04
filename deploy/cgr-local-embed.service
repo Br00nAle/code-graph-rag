@@ -1,0 +1,17 @@
+[Unit]
+Description=CGR local CPU embed test backend
+After=network.target
+
+[Service]
+WorkingDirectory=/home/user/code-graph-rag
+Environment=CUDA_VISIBLE_DEVICES=-1
+ExecStart=/home/user/llama.cpp/build/bin/llama-server --model /home/user/code-graph-rag/.tmp/local-cgr/nomic-embed.gguf --alias cgr-embed --host 127.0.0.1 --port 18186 --api-key-file /home/user/code-graph-rag/.tmp/local-cgr/key --device none --gpu-layers 0 --no-op-offload --threads 2 --threads-batch 2 --ctx-size 8192 --parallel 1 --batch-size 8192 --ubatch-size 8192 --embedding --pooling mean
+Nice=10
+CPUWeight=10
+CPUQuota=100%
+MemoryMax=2G
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

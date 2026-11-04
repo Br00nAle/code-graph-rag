@@ -6,6 +6,7 @@ from codebase_rag.constants import (
     C_EXTENSIONS,
     CPP_EXTENSIONS,
     DART_EXTENSIONS,
+    GDSCRIPT_EXTENSIONS,
     GO_EXTENSIONS,
     JAVA_EXTENSIONS,
     JS_EXTENSIONS,
@@ -66,6 +67,7 @@ LANGUAGE_SPEC_PARAMS = [
     (SupportedLanguage.PHP, PHP_EXTENSIONS),
     (SupportedLanguage.LUA, LUA_EXTENSIONS),
     (SupportedLanguage.DART, DART_EXTENSIONS),
+    (SupportedLanguage.GDSCRIPT, GDSCRIPT_EXTENSIONS),
 ]
 
 
@@ -97,6 +99,7 @@ EXTENSION_MAPPING_PARAMS = [
     (".php", SupportedLanguage.PHP),
     (".lua", SupportedLanguage.LUA),
     (".dart", SupportedLanguage.DART),
+    (".gd", SupportedLanguage.GDSCRIPT),
 ]
 
 
