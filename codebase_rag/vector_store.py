@@ -194,7 +194,13 @@ def get_qdrant_client() -> Any:
     _ensure_client_backend(VectorStoreBackend.QDRANT)
     if _CLIENT is None:
         if settings.QDRANT_URL:
-            _CLIENT = QdrantClient(url=settings.QDRANT_URL)
+            if settings.CGR_LOCAL_ONLY is True:
+                settings.validate_local_endpoints()
+                _CLIENT = QdrantClient(url=settings.QDRANT_URL,
+                                      trust_env=False, follow_redirects=False,
+                                      check_compatibility=False)
+            else:
+                _CLIENT = QdrantClient(url=settings.QDRANT_URL)
         else:
             try:
                 _CLIENT = QdrantClient(path=settings.QDRANT_DB_PATH)

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from loguru import logger
+import httpx
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.litellm import LiteLLMProvider as PydanticLiteLLMProvider
 
 from codebase_rag import constants as cs
 from codebase_rag import exceptions as ex
+from codebase_rag.config import settings
 
 from .base import ModelProvider
 
@@ -41,9 +43,17 @@ class LiteLLMProvider(ModelProvider):
     def create_model(
         self, model_id: str, **kwargs: str | int | None
     ) -> OpenAIChatModel:
+        if settings.CGR_LOCAL_ONLY is True and (
+            self.endpoint != "http://127.0.0.1:18194/v1" or model_id != "rag-query-gen"
+        ):
+            raise ValueError("CGR local-only mode requires the approved query-intent endpoint")
         self.validate_config()
 
         logger.info(f"Creating LiteLLM proxy model: {model_id} at {self.endpoint}")
 
-        provider = PydanticLiteLLMProvider(api_key=self.api_key, api_base=self.endpoint)
+        if settings.CGR_LOCAL_ONLY is True:
+            provider = PydanticLiteLLMProvider(api_key=self.api_key, api_base=self.endpoint,
+                http_client=httpx.AsyncClient(trust_env=False, follow_redirects=False))
+        else:
+            provider = PydanticLiteLLMProvider(api_key=self.api_key, api_base=self.endpoint)
         return OpenAIChatModel(model_id, provider=provider)

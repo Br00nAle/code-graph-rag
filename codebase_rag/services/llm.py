@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 from pydantic import ValidationError
-from pydantic_ai import Agent, DeferredToolRequests, Tool
+from pydantic_ai import Agent, DeferredToolRequests, NativeOutput, Tool
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.agent import AgentRetries
 
 from .. import constants as cs
@@ -155,51 +157,44 @@ class CypherGenerator:
             self.agent = Agent(
                 model=llm,
                 system_prompt=INTENT_PROMPT if self.structured else system_prompt,
-                output_type=str,
+                output_type=NativeOutput(QueryIntent, name='query_intent', strict=True) if self.structured else str,
                 retries=0 if self.structured else settings.AGENT_RETRIES,
                 model_settings={"max_tokens":512,"timeout":120} if self.structured else None,
             )
         except Exception as e:
             raise ex.LLMGenerationError(ex.LLM_INIT_CYPHER.format(error=e)) from e
 
+    async def generate_intent(self, natural_language_query: str) -> QueryIntent:
+        """Two validation attempts at most, sharing the original 120 second deadline."""
+        if not self.structured or len(self.projects) != 1:
+            raise ValueError('Select exactly one project for query intents')
+        if not natural_language_query.strip() or len(natural_language_query) > 4000:
+            raise ValueError('Graph questions must contain 1–4000 characters; no truncation')
+        prompt = natural_language_query
+        async with asyncio.timeout(120):
+            for attempt in range(2):
+                try:
+                    result = await self.agent.run(prompt)
+                    intent = result.output
+                    if intent.operation != 'unsupported':
+                        compile_query(intent, self.projects[0])
+                    return intent
+                except (UnexpectedModelBehavior, ValidationError, ValueError) as error:
+                    if attempt == 1:
+                        raise ValueError('Intent generation failed after 2 attempts') from error
+                    logger.warning('Intent validation failed; using the final correction attempt: {}', error)
+                    prompt = (f'Original question: {natural_language_query}\n'
+                        'Return exactly one object matching the query_intent schema. '
+                        'Use a symbol array for up to 8 names with the same operation and kind. '
+                        'Use unsupported for other requests. Preserve all requested names and the original operation.')
+
     async def generate(self, natural_language_query: str) -> str | ScopedQuery:
         logger.info(ls.CYPHER_GENERATING.format(query=natural_language_query))
         try:
-            if self.structured and len(self.projects) != 1:
-                raise ValueError("Select exactly one project before querying")
-            result = await self.agent.run(natural_language_query)
             if self.structured:
-                for attempt in range(3):
-                    output = result.output.strip()
-                    if output.startswith("```") and output.endswith("```"):
-                        output = output.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                    try:
-                        intent = QueryIntent.model_validate_json(output)
-                        # Compilation also validates operation-specific requirements.
-                        if intent.operation == "unsupported":
-                            break
-                        return compile_query(intent, self.projects[0])
-                    except (ValidationError, ValueError) as error:
-                        if attempt == 2:
-                            raise ValueError(
-                                f"Intent generation failed after 3 attempts: {error}"
-                            ) from error
-                        logger.warning(
-                            "Intent validation failed; correction retry {}/2: {}",
-                            attempt + 1,
-                            error,
-                        )
-                        result = await self.agent.run(
-                            f"Original question: {natural_language_query}\n"
-                            f"Previous response: {result.output}\n"
-                            f"Validation error: {error}\n"
-                            "Correct the response using the intent schema. Return only JSON. "
-                            "kind must be callable, function, method, or class. "
-                            "For unsupported requests use operation=unsupported, "
-                            "symbol empty, and kind=callable. Preserve the original request; "
-                            "do not substitute a different supported operation."
-                        )
+                intent = await self.generate_intent(natural_language_query)
                 return compile_query(intent, self.projects[0])
+            result = await self.agent.run(natural_language_query)
             if (
                 not isinstance(result.output, str)
                 or cs.CYPHER_MATCH_KEYWORD not in result.output.upper()
@@ -226,6 +221,11 @@ def create_rag_orchestrator(
     load_instructions: bool = True,
     active_projects: list[str] | None = None,
 ) -> tuple[Agent, str]:
+    if settings.CGR_LOCAL_ONLY is True:
+        raise ex.LLMGenerationError(
+            "Legacy CGR agent disabled in local-only mode; use cluster_code_graph.ask_code "
+            "or /home/user/projects/ai-cluster/ai-cluster-blueprint/tools/cgr_mcp.py --question"
+        )
     try:
         config = settings.active_orchestrator_config
         llm = _create_provider_model(config)

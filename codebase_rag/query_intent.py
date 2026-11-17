@@ -1,15 +1,18 @@
 """Compile a small read-only query vocabulary; project and symbols are bound data."""
 from dataclasses import dataclass
 import json
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+Symbol = Annotated[str, Field(max_length=512)]
 
 
 class QueryIntent(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     operation: Literal['find_symbol','find_callers','find_callees','class_methods','count_symbols','unsupported']
-    symbol: str = Field(default='',max_length=512)
+    symbol: Symbol | Annotated[list[Symbol], Field(min_length=1, max_length=8)] = ''
     kind: Literal['callable','function','method','class'] = 'callable'
 
 
@@ -24,10 +27,13 @@ Operations:
 - unsupported: anything else, including writes, paths, multi-hop or cross-project requests.
 kind is callable (Function OR Method), function (Function only), method, or class.
 Copy the symbol from the question; use a qualified or dotted name if provided.
+For multiple symbols with the SAME operation and kind, use one symbol array (at most 8), never multiple JSON objects.
+Do not join separate names into a string or drop requested symbols. Mixed operations/kinds or more than 8 symbols are unsupported.
 For counts symbol is empty. For unsupported symbol is empty.
 Unsupported is an operation, never a kind. For unsupported use kind callable.
 Examples:
 "Who calls GameManager.start_shift?" -> {"operation":"find_callers","symbol":"GameManager.start_shift","kind":"callable"}
+"Which functions call improvement_report and worker_metrics?" -> {"operation":"find_callers","symbol":["improvement_report","worker_metrics"],"kind":"callable"}
 "What does GameManager.start_shift call?" -> {"operation":"find_callees","symbol":"GameManager.start_shift","kind":"callable"}
 "How many Function nodes?" -> {"operation":"count_symbols","symbol":"","kind":"function"}
 "Methods in Inference" -> {"operation":"class_methods","symbol":"Inference","kind":"class"}
@@ -39,7 +45,7 @@ Project scope is supplied by the caller and enforced by code. Do not translate p
 @dataclass(frozen=True)
 class ScopedQuery:
     query: str
-    parameters: dict[str,str]
+    parameters: dict[str, str | list[str]]
 
     @property
     def display(self) -> str:
@@ -62,10 +68,16 @@ def compile_query(intent: QueryIntent, project: str) -> ScopedQuery:
             raise ValueError('Counts do not accept a symbol filter')
         query = f'MATCH (n) WHERE {kinds[intent.kind]} AND {scope} RETURN count(n) AS total;'
     else:
-        symbol = intent.symbol.strip()
-        if not symbol:
+        symbols = [s.strip() for s in (intent.symbol if isinstance(intent.symbol, list) else [intent.symbol])]
+        if not all(symbols):
             raise ValueError('A symbol is required')
-        params.update(symbol=symbol,symbol_suffix='.'+symbol)
+        symbols = list(dict.fromkeys(symbols))
+        if len(symbols) == 1:
+            params.update(symbol=symbols[0],symbol_suffix='.'+symbols[0])
+        else:
+            params['symbols'] = symbols
+            predicate = '(n.name = requested_symbol OR n.qualified_name = requested_symbol OR n.qualified_name ENDS WITH (\'.\' + requested_symbol))'
+            result = result.replace('RETURN DISTINCT ', 'RETURN DISTINCT requested_symbol AS requested_symbol, ')
         if intent.operation == 'find_symbol':
             query = f'MATCH (n) WHERE {kinds[intent.kind]} AND {scope} AND {predicate} {result}'
         elif intent.operation == 'class_methods':
@@ -77,4 +89,6 @@ def compile_query(intent: QueryIntent, project: str) -> ScopedQuery:
             query = (f'MATCH {edge} WHERE (n:Function OR n:Method) AND (target:Function OR target:Method) '
                 'AND target.qualified_name STARTS WITH $project_prefix AND '+scope+' AND '+
                 predicate.replace('n.','target.')+' '+result)
+        if len(symbols) > 1:
+            query = 'UNWIND $symbols AS requested_symbol ' + query
     return ScopedQuery(query,params)

@@ -113,6 +113,28 @@ cgr daemon up
 
 ## Multi-Repository Setup
 
+For read-only graph and semantic searches on a shared server, call `list_projects`
+and pass the exact indexed name as `project_name`:
+
+```json
+{"natural_language_query": "Who calls GameManager.start_shift?", "project_name": "watermelon-mania"}
+```
+
+Both `query_code_graph` and `semantic_search` accept this parameter. Each request
+keeps its own scope, so concurrent workspaces do not change each other's project.
+Unknown projects are rejected. Omitting `project_name` retains the server's
+configured project; mentioning a different project in the question does not
+select it. Reconnect clients after upgrading to refresh their tool schemas.
+
+File tools, source snippets, `ask_agent`, analysis tools, and indexing still use
+the server's configured repository. Use a repository-specific instance for those
+operations, or the repository-scoped CLI for read-only agent questions:
+
+```bash
+cgr start --repo-path /absolute/path/to/project --project-name exact-indexed-name \
+  --no-sync --no-start-stack --ask-agent "Read-only: who calls MyClass.method?"
+```
+
 Add separate named instances for different projects:
 
 ```bash
@@ -132,7 +154,8 @@ claude mcp add --transport stdio code-graph-rag-frontend \
 ```
 
 !!! warning
-    Only one repository can be indexed at a time per MCP instance. When you index a new repository, the previous repository's data is automatically cleared.
+    `index_repository` rebuilds the configured project's index. Use
+    `update_repository` for incremental updates; other projects are preserved.
 
 ## Troubleshooting
 

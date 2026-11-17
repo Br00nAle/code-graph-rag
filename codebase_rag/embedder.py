@@ -106,6 +106,7 @@ def clear_embedding_cache() -> None:
 
 
 def _openai_client() -> httpx.Client:
+    settings.validate_local_endpoints()
     headers: dict[str, str] = {}
     api_key = settings.OPENAI_EMBEDDING_API_KEY or os.environ.get(
         API_KEY_INFO[cs.Provider.OPENAI]["env_var"]
@@ -116,6 +117,8 @@ def _openai_client() -> httpx.Client:
         base_url=settings.OPENAI_EMBEDDING_BASE_URL,
         headers=headers,
         timeout=settings.OPENAI_EMBEDDING_TIMEOUT,
+        trust_env=not settings.CGR_LOCAL_ONLY,
+        follow_redirects=False,
     )
 
 

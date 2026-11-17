@@ -9,6 +9,7 @@ WorkingDirectory=/home/user/code-graph-rag
 Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=TARGET_REPO_PATH=/home/user/watermelon-mania
 Environment=MCP_PROJECT_NAME=watermelon-mania
+Environment=CGR_LOCAL_ONLY=true
 ExecStartPre=/home/user/.local/libexec/cgr-wait-memgraph.py
 ExecStart=/home/user/code-graph-rag/.venv/bin/cgr mcp-server --transport http --host 127.0.0.1 --port 8000
 Restart=on-failure

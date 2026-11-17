@@ -9,7 +9,7 @@ from typing import TypedDict, Unpack
 
 from dotenv import load_dotenv
 from loguru import logger
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from . import constants as cs
@@ -123,6 +123,9 @@ class ModelConfig:
         return ModelConfigKwargs(**result)
 
     def validate_api_key(self, role: str = cs.DEFAULT_MODEL_ROLE) -> None:
+        # Local-only MCP still serves retrieval; its disabled agent needs no key.
+        if settings.CGR_LOCAL_ONLY is True and role == cs.ModelRole.ORCHESTRATOR:
+            return
         provider_lower = self.provider.lower()
         provider_env_keys = {
             cs.Provider.ANTHROPIC: cs.ENV_ANTHROPIC_API_KEY,
@@ -157,6 +160,7 @@ class AppConfig(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        hide_input_in_errors=True,
     )
 
     MEMGRAPH_HOST: str = "localhost"
@@ -168,6 +172,26 @@ class AppConfig(BaseSettings):
     MEMGRAPH_BATCH_SIZE: int = 1000
     AGENT_RETRIES: int = 3
     ORCHESTRATOR_OUTPUT_RETRIES: int = 100
+    CGR_LOCAL_ONLY: bool = False
+
+    @model_validator(mode="after")
+    def validate_local_endpoints(self):
+        if self.CGR_LOCAL_ONLY is True and (
+            self.CYPHER_PROVIDER != "litellm_proxy"
+            or self.CYPHER_MODEL != "rag-query-gen"
+            or self.CYPHER_ENDPOINT != "http://127.0.0.1:18194/v1"
+            or self.EMBEDDING_PROVIDER != "openai"
+            or self.OPENAI_EMBEDDING_BASE_URL != "http://127.0.0.1:18190/v1"
+            or self.OPENAI_EMBEDDING_MODEL != "embedding"
+            or self.OPENAI_EMBEDDING_DIMENSIONS != 1024
+            or self.OPENAI_EMBEDDING_QUERY_PREFIX
+            or self.OPENAI_EMBEDDING_DOCUMENT_PREFIX
+            or self.MEMGRAPH_HOST not in {"localhost", "127.0.0.1", "::1"}
+            or self.VECTOR_STORE_BACKEND != "qdrant"
+            or self.QDRANT_URL != "http://127.0.0.1:6333"
+        ):
+            raise ValueError("CGR local-only mode requires the approved Arch query, embedding and database endpoints")
+        return self
 
     ORCHESTRATOR_PROVIDER: str = ""
     ORCHESTRATOR_MODEL: str = ""

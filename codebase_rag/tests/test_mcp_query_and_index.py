@@ -65,6 +65,47 @@ def mcp_registry(temp_project_root: Path) -> MCPToolsRegistry:
 class TestQueryCodeGraph:
     """Test query_code_graph functionality."""
 
+    async def test_explicit_workspace_scopes_are_request_local(
+        self, mcp_registry: MCPToolsRegistry,
+    ) -> None:
+        import asyncio
+        from codebase_rag.query_intent import QueryIntent, compile_query
+
+        mcp_registry.ingestor.list_projects.return_value = ["alpha", "beta"]
+        mcp_registry.ingestor.fetch_all.return_value = [{"total": 1}]
+        original_project = mcp_registry.project_name
+        original_generator = mcp_registry.cypher_gen
+
+        def generator(active_projects):
+            query = compile_query(QueryIntent(operation="count_symbols"), active_projects[0])
+            return MagicMock(generate=AsyncMock(return_value=query))
+
+        with patch("codebase_rag.mcp.tools.CypherGenerator", side_effect=generator):
+            results = await asyncio.gather(*(
+                mcp_registry.query_code_graph("Count callables", project_name=project)
+                for project in ("alpha", "beta")
+            ))
+        for result, project in zip(results, ("alpha", "beta")):
+            assert '"project_prefix": "' + project + '."' in result["query_used"]
+            assert result["results"] == [{"total": 1}]
+        assert mcp_registry.project_name == original_project
+        assert mcp_registry.cypher_gen is original_generator
+        mcp_registry._query_tool.function.assert_not_awaited()
+
+        mcp_registry._semantic_search_tool = MagicMock(function=AsyncMock(return_value="matches"))
+        await mcp_registry.semantic_search("purpose", project_name="beta")
+        mcp_registry._semantic_search_tool.function.assert_awaited_once_with(
+            query="purpose", top_k=5, project="beta",
+        )
+
+        rejected = await mcp_registry.query_code_graph("Count callables", project_name="missing")
+        assert "Unknown indexed project" in rejected["error"]
+        with pytest.raises(ValueError, match="Unknown indexed project"):
+            await mcp_registry.semantic_search("purpose", project_name="")
+        mcp_registry._query_tool.function.assert_not_awaited()
+        schema = next(s for s in mcp_registry.get_tool_schemas() if s.name == "query_code_graph")
+        assert "project_name" in schema.inputSchema["properties"]
+
     async def test_generation_failure_is_explicit(self, mcp_registry: MCPToolsRegistry) -> None:
         from codebase_rag.schemas import QueryGraphData
 

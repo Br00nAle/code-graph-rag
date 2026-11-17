@@ -332,6 +332,11 @@ except ImportError as e:
 def get_provider(
     provider_name: str | cs.Provider, **config: str | int | None
 ) -> ModelProvider:
+    if settings.CGR_LOCAL_ONLY is True and (
+        provider_name != cs.Provider.LITELLM_PROXY
+        or config.get("endpoint") != "http://127.0.0.1:18194/v1"
+    ):
+        raise ValueError("CGR local-only mode blocks this provider; use cluster_code_graph.ask_code for answers")
     provider_key = str(provider_name)
     if provider_key not in PROVIDER_REGISTRY:
         available = ", ".join(PROVIDER_REGISTRY.keys())
@@ -344,6 +349,8 @@ def get_provider(
 
 
 def get_provider_from_config(config: ModelConfig) -> ModelProvider:
+    if settings.CGR_LOCAL_ONLY is True and config.model_id != "rag-query-gen":
+        raise ValueError("CGR local-only mode permits only the approved query-intent model")
     return get_provider(
         config.provider,
         api_key=config.api_key,
@@ -386,7 +393,8 @@ def check_litellm_proxy_running(
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        with httpx.Client(timeout=settings.LITELLM_HEALTH_TIMEOUT) as client:
+        with httpx.Client(timeout=settings.LITELLM_HEALTH_TIMEOUT,
+                          trust_env=not settings.CGR_LOCAL_ONLY, follow_redirects=False) as client:
             response = client.get(health_url, headers=headers)
             if response.status_code == cs.HTTP_OK:
                 return True

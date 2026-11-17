@@ -208,7 +208,11 @@ class MCPToolsRegistry:
                         cs.MCPParamName.NATURAL_LANGUAGE_QUERY: MCPInputSchemaProperty(
                             type=cs.MCPSchemaType.STRING,
                             description=td.MCP_PARAM_NATURAL_LANGUAGE_QUERY,
-                        )
+                        ),
+                        cs.MCPParamName.PROJECT_NAME: MCPInputSchemaProperty(
+                            type=cs.MCPSchemaType.STRING,
+                            description="Exact indexed project from list_projects. Supply this for your workspace; omission uses the server's configured project, not a project named in the question.",
+                        ),
                     },
                     required=[cs.MCPParamName.NATURAL_LANGUAGE_QUERY],
                 ),
@@ -339,6 +343,10 @@ class MCPToolsRegistry:
                             type=cs.MCPSchemaType.INTEGER,
                             description=td.MCP_PARAM_TOP_K,
                             default=5,
+                        ),
+                        cs.MCPParamName.PROJECT_NAME: MCPInputSchemaProperty(
+                            type=cs.MCPSchemaType.STRING,
+                            description="Exact indexed project from list_projects. Supply this for your workspace; omission uses the server's configured project.",
                         ),
                     },
                     required=[cs.MCPParamName.NATURAL_LANGUAGE_QUERY],
@@ -679,11 +687,25 @@ class MCPToolsRegistry:
             logger.error(lg.MCP_ERROR_UPDATING.format(error=e))
             return cs.MCP_UPDATE_ERROR.format(error=e)
 
-    async def semantic_search(self, natural_language_query: str, top_k: int = 5) -> str:
+    async def _resolve_query_project(self, project_name: str | None) -> str:
+        if project_name is None:
+            return self.project_name
+        projects = await asyncio.to_thread(self.ingestor.list_projects)
+        if project_name not in projects:
+            raise ValueError(
+                f"Unknown indexed project {project_name!r}. Choose from list_projects: {projects}"
+            )
+        return project_name
+
+    async def semantic_search(
+        self, natural_language_query: str, top_k: int = 5,
+        project_name: str | None = None,
+    ) -> str:
         assert self._semantic_search_tool is not None
+        project = await self._resolve_query_project(project_name)
         logger.info(lg.MCP_SEMANTIC_SEARCH.format(query=natural_language_query))
         result = await self._semantic_search_tool.function(
-            query=natural_language_query, top_k=top_k, project=self.project_name
+            query=natural_language_query, top_k=top_k, project=project
         )
         return str(result)
 
@@ -714,10 +736,20 @@ class MCPToolsRegistry:
             logger.error(lg.MCP_ASK_AGENT_ERROR.format(error=e))
             return {"error": cs.MCP_ASK_AGENT_ERROR.format(error=e)}
 
-    async def query_code_graph(self, natural_language_query: str) -> QueryResultDict:
+    async def query_code_graph(
+        self, natural_language_query: str, project_name: str | None = None,
+    ) -> QueryResultDict:
         logger.info(lg.MCP_QUERY_CODE_GRAPH.format(query=natural_language_query))
         try:
-            graph_data = await self._query_tool.function(natural_language_query)
+            project = await self._resolve_query_project(project_name)
+            query_tool = self._query_tool
+            if project != self.project_name:
+                # Keep scope request-local: other workspaces share this server.
+                query_tool = create_query_tool(
+                    ingestor=self.ingestor,
+                    cypher_gen=CypherGenerator(active_projects=[project]),
+                )
+            graph_data = await query_tool.function(natural_language_query)
             result_dict: QueryResultDict = graph_data.model_dump()
             if result_dict.get("error"):
                 logger.error(lg.MCP_ERROR_QUERY.format(error=result_dict["error"]))
